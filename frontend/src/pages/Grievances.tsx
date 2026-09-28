@@ -11,9 +11,10 @@ import {
 import { getAsset } from "../api/assets";
 import { GrievanceStatusBadge, SeverityBadge } from "../components/Badge";
 import { useAuth } from "../hooks/useAuth";
+import { api, API_BASE_URL } from "../api/client";
 import type { Grievance } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+const API_BASE = API_BASE_URL;
 const STATUS_OPTIONS = ["OPEN", "ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED", "REJECTED"];
 const NEXT_STATUS: Record<string, string[]> = {
   OPEN: ["ACKNOWLEDGED", "IN_PROGRESS", "REJECTED"],
