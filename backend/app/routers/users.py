@@ -24,7 +24,7 @@ def _to_read(user: User) -> UserRead:
 @router.get("", response_model=list[UserRead])
 def list_users(
     db: Session = Depends(get_db),
-    _=Depends(require_roles(SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER)),
+    _=Depends(require_roles(SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN)),
 ):
     users = db.query(User).order_by(User.full_name).all()
     return [_to_read(u) for u in users]
@@ -77,7 +77,7 @@ def update_user(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
 
-    record_audit(db, actor_id=current_user.id, action="USER_UPDATE", entity_type="user", entity_id=user.id, old_value=old_value, new_value=payload.model_dump(exclude_unset=True))
+    record_audit(db, actor_id=current_user.id, action="USER_UPDATE", entity_type="user", entity_id=user.id, old_value=old_value, new_value=payload.model_dump(exclude_unset=True, mode="json"))
     db.commit()
     db.refresh(user)
     return _to_read(user)

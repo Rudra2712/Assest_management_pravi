@@ -17,7 +17,7 @@ export default function AuditLogs() {
       </div>
       <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
         <option value="">All entity types</option>
-        {["asset", "inspection", "maintenance_request", "work_order", "project", "contractor", "document", "user", "csv_import_batch"].map((t) => (
+        {["asset", "inspection", "maintenance_request", "work_order", "project", "tender", "contractor", "document", "user", "grievance"].map((t) => (
           <option key={t} value={t}>{t}</option>
         ))}
       </select>

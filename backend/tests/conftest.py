@@ -1,13 +1,17 @@
-"""Integration test fixtures. These need a real local PostgreSQL + PostGIS
-database (DATABASE_URL from .env / environment) — there is no SQLite fallback
-since the schema uses PostGIS geometry and JSONB columns. If the database
-isn't reachable or PostGIS isn't installed, the whole integration suite is
-skipped rather than failing noisily; app/services/test_*.py (pure unit tests)
-always run regardless."""
+"""Integration test fixtures.
+
+These run against a SEPARATE database (DATABASE_URL's name + "_test") —
+never the real dev database — so a broken test run can't truncate or corrupt
+real seeded/demo data. scripts/setup_local_db.sql creates both databases.
+Override with TEST_DATABASE_URL if you want to point elsewhere.
+"""
+
+import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
@@ -16,11 +20,22 @@ from app import models  # noqa: F401  -- registers all tables on Base.metadata
 from app.main import app
 
 
+def _test_database_url() -> str:
+    override = os.environ.get("TEST_DATABASE_URL")
+    if override:
+        return override
+    url = make_url(settings.DATABASE_URL)
+    return str(url.set(database=f"{url.database}_test"))
+
+
+TEST_DATABASE_URL = _test_database_url()
+
+
 def _database_available() -> bool:
     try:
-        engine = create_engine(settings.DATABASE_URL)
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        engine = create_engine(TEST_DATABASE_URL)
+        with engine.connect():
+            pass
         engine.dispose()
         return True
     except Exception:
@@ -33,11 +48,13 @@ DB_AVAILABLE = _database_available()
 @pytest.fixture(scope="session")
 def engine():
     if not DB_AVAILABLE:
-        pytest.skip("Local PostgreSQL + PostGIS not available (see docs/setup.md)")
-    eng = create_engine(settings.DATABASE_URL)
+        pytest.skip(f"Test database not available at {TEST_DATABASE_URL} (see docs/setup.md)")
+    eng = create_engine(TEST_DATABASE_URL)
+    # checkfirst=True (the default) — never drops anything. This is an
+    # isolated, disposable schema; each test's data is rolled back via the
+    # SAVEPOINT in db_session below, so there's nothing to clean up here.
     Base.metadata.create_all(eng)
     yield eng
-    Base.metadata.drop_all(eng)
     eng.dispose()
 
 
@@ -78,33 +95,59 @@ def reference_data(db_session):
     from app.models.asset import AssetType
     from app.models.user import Role
 
-    dept = Department(code="RNB", name="Roads & Buildings")
-    db_session.add(dept)
-    db_session.flush()
+    # Idempotent (query-or-create): the local dev database this test suite runs
+    # against may already have real seed data (python -m seed.seed_data) with
+    # overlapping reference codes — reuse it rather than colliding with it.
+    def get_or_create(model, code, **kwargs):
+        existing = db_session.query(model).filter(model.code == code).first()
+        if existing:
+            return existing
+        obj = model(code=code, **kwargs)
+        db_session.add(obj)
+        db_session.flush()
+        return obj
 
-    state = AdministrativeUnit(code="ST", name="State", level=AdminUnitLevel.STATE, path="")
-    db_session.add(state)
-    db_session.flush()
-    state.path = str(state.id)
+    dept = get_or_create(Department, "TEST-RNB", name="Roads & Buildings (test)")
 
-    division = AdministrativeUnit(code="DIV1", name="Division 1", level=AdminUnitLevel.DIVISION, parent_id=state.id, path="")
-    db_session.add(division)
-    db_session.flush()
-    division.path = f"{state.path}.{division.id}"
+    state = get_or_create(AdministrativeUnit, "TEST-ST", name="State (test)", level=AdminUnitLevel.STATE, path="")
+    if not state.path:
+        state.path = str(state.id)
+        db_session.flush()
 
-    other_division = AdministrativeUnit(code="DIV2", name="Division 2", level=AdminUnitLevel.DIVISION, parent_id=state.id, path="")
-    db_session.add(other_division)
-    db_session.flush()
-    other_division.path = f"{state.path}.{other_division.id}"
+    division = get_or_create(AdministrativeUnit, "TEST-DIV1", name="Division 1 (test)", level=AdminUnitLevel.DIVISION, parent_id=state.id, path="")
+    if not division.path:
+        division.path = f"{state.path}.{division.id}"
+        db_session.flush()
 
-    road_type = AssetType(code=AssetTypeCode.ROAD, name="Road", default_geometry_kind=GeometryKind.LINESTRING)
-    bridge_type = AssetType(code=AssetTypeCode.BRIDGE, name="Bridge", default_geometry_kind=GeometryKind.POINT)
-    db_session.add_all([road_type, bridge_type])
+    other_division = get_or_create(AdministrativeUnit, "TEST-DIV2", name="Division 2 (test)", level=AdminUnitLevel.DIVISION, parent_id=state.id, path="")
+    if not other_division.path:
+        other_division.path = f"{state.path}.{other_division.id}"
+        db_session.flush()
+
+    asset_type_defs = [
+        (AssetTypeCode.ROAD, "Road", GeometryKind.LINESTRING),
+        (AssetTypeCode.BRIDGE, "Bridge", GeometryKind.POINT),
+        (AssetTypeCode.CULVERT, "Culvert", GeometryKind.POINT),
+        (AssetTypeCode.BUILDING, "Building", GeometryKind.POLYGON),
+        (AssetTypeCode.PUBLIC_STRUCTURE, "Public Structure", GeometryKind.POINT),
+        (AssetTypeCode.OTHER_FIXED_ASSET, "Other Fixed Asset", GeometryKind.POINT),
+    ]
+    asset_types = {}
+    for code, name, geom_kind in asset_type_defs:
+        t = db_session.query(AssetType).filter(AssetType.code == code).first()
+        if not t:
+            t = AssetType(code=code, name=name, default_geometry_kind=geom_kind)
+            db_session.add(t)
+        asset_types[code.value] = t
+    road_type = asset_types[AssetTypeCode.ROAD.value]
+    bridge_type = asset_types[AssetTypeCode.BRIDGE.value]
 
     roles = {}
     for role in SystemRole:
-        r = Role(code=role.value, name=role.value)
-        db_session.add(r)
+        r = db_session.query(Role).filter(Role.code == role.value).first()
+        if not r:
+            r = Role(code=role.value, name=role.value)
+            db_session.add(r)
         roles[role.value] = r
 
     db_session.flush()
@@ -116,6 +159,7 @@ def reference_data(db_session):
         "other_division": other_division,
         "road_type": road_type,
         "bridge_type": bridge_type,
+        "asset_types": asset_types,
         "roles": roles,
     }
 

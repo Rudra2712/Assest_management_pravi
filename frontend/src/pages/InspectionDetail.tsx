@@ -67,7 +67,7 @@ export default function InspectionDetail() {
   if (isLoading || !inspection) return <div className="text-slate-500">Loading…</div>;
 
   const canSubmit = inspection.inspector_id === user?.id && ["ASSIGNED", "IN_PROGRESS", "RETURNED"].includes(inspection.status);
-  const canReview = inspection.status === "SUBMITTED" && hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
+  const canReview = inspection.status === "SUBMITTED" && hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
 
   return (
     <div className="max-w-3xl space-y-6">

@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,5 +9,30 @@ html, body, #root {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-slate-50 text-ink font-sans antialiased;
 }
+
+/* Card hover lift — used by KPI/stat cards */
+.kpi-card {
+  @apply bg-white border border-slate-100 rounded-xl p-5 flex flex-col gap-3 transition-all duration-200;
+}
+.kpi-card:hover {
+  @apply -translate-y-0.5 shadow-card-hover border-slate-200;
+}
+
+.page-header {
+  @apply flex items-start justify-between flex-wrap gap-4 mb-7 pb-6 border-b border-slate-100;
+}
+.page-title {
+  @apply text-xl font-extrabold text-ink tracking-tight;
+}
+.page-subtitle {
+  @apply text-sm text-slate-500 mt-1;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+::selection { background: rgba(110, 207, 163, 0.3); color: #111827; }

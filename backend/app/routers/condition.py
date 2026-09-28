@@ -33,7 +33,7 @@ def recompute_condition(
     criticality: float = 0.5,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     asset = db.get(Asset, asset_id)

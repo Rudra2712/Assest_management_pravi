@@ -1,9 +1,9 @@
 # Database
 
-PostgreSQL + PostGIS. Schema managed by Alembic (`backend/migrations/`); the full initial schema is
+PostgreSQL. Geometry is stored as GeoJSON in `JSONB`, so PostGIS is not required. Schema is managed
+by Alembic (`backend/migrations/`); the full initial schema is
 `backend/migrations/versions/0001_initial_schema.py`. All primary keys are UUIDs; all tables carry
-`created_at`/`updated_at`; foreign keys and indexes (including a GIST spatial index on
-`asset_geometries.geom`) are defined in the migration.
+`created_at`/`updated_at`; foreign keys and indexes are defined in the migration.
 
 ## Entity-relationship overview
 
@@ -50,7 +50,7 @@ module generic without a table explosion.
 | `users` | Accounts; `department_id` + `administrative_unit_id` set a user's home context |
 | `asset_categories`, `asset_types` | Reference data for the 6 seeded asset types |
 | `assets` | Common asset entity (identity, ownership, jurisdiction, lifecycle status, condition, financials) |
-| `asset_geometries` | One row per asset; generic PostGIS `GEOMETRY` column (SRID 4326), GIST-indexed |
+| `asset_geometries` | One row per asset; GeoJSON geometry stored in a `JSONB` column |
 | `roads`, `bridges`, `culverts`, `buildings`, `structures` | Type-specific attributes, 1:1 with `assets` |
 | `asset_relationships` | Generic asset-to-asset linkage (e.g. a culvert along a road) |
 | `lifecycle_events` | Append-only lifecycle transition history |

@@ -2,9 +2,9 @@
 
 See the root [README.md](../README.md) for the full step-by-step (Windows-focused) setup. Summary:
 
-1. Install Node.js 18+, Python 3.11+, PostgreSQL 14+ with PostGIS.
+1. Install Node.js 18+, Python 3.11+, and PostgreSQL 14+ (PostGIS is not required).
 2. `psql -U postgres -f scripts\setup_local_db.sql` — creates the `rb_admin` role, `rb_assets`
-   database, and enables PostGIS.
+  database, and grants the app access.
 3. `copy .env.example .env`
 4. Backend: `cd backend && python -m venv venv && venv\Scripts\activate && pip install -r
    requirements.txt && alembic upgrade head && python -m seed.seed_data && uvicorn app.main:app
@@ -23,10 +23,7 @@ are stored under `backend/uploads/`.
   differ, update `DATABASE_URL` in the backend environment instead.
 - **`psql: command not found`** — use the full path to `psql.exe` under your PostgreSQL
   installation's `bin` directory, or add it to `PATH`.
-- **`CREATE EXTENSION postgis` fails** — PostGIS isn't installed for your PostgreSQL version yet.
-  On Windows, re-run the PostgreSQL installer and choose "Stack Builder" → Spatial Extensions →
-  PostGIS, or download the matching PostGIS bundle from postgis.net.
-- **CORS errors in the browser** — confirm `BACKEND_CORS_ORIGINS` in `.env` includes
-  `http://localhost:5173` (the default) and that you restarted `uvicorn` after editing `.env`.
+- **CORS errors in the browser** — confirm `BACKEND_CORS_ORIGINS` in `.env` includes the exact
+  frontend origin (`http://localhost:5173` or `http://127.0.0.1:5173`) and restart `uvicorn`.
 - **File uploads fail** — the backend creates `backend/uploads/` automatically on startup; confirm
   the process has write permission to that folder.

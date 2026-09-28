@@ -4,7 +4,7 @@ A centralized, GIS-enabled system for the Roads & Buildings (R&B) Department to 
 maintain and manage **non-movable physical infrastructure assets** — roads, bridges, culverts,
 government buildings and other fixed structures — across their complete lifecycle.
 
-This is a hackathon MVP: a single FastAPI backend, a single React frontend, and PostgreSQL/PostGIS.
+This is a hackathon MVP: a single FastAPI backend, a single React frontend, and PostgreSQL.
 No Docker, no Nginx, no Redis/Celery, no MinIO — everything runs with two commands on a normal
 developer machine.
 
@@ -20,7 +20,7 @@ React + Vite + Tailwind (GIS map, dashboards)
 FastAPI (single modular app: auth, assets, GIS, lifecycle, inspections,
          maintenance, projects, documents, audit)
    |
-   +--> PostgreSQL + PostGIS   (all relational + spatial data)
+   +--> PostgreSQL             (relational data + GeoJSON geometry)
    +--> backend/uploads/       (local document storage; S3-ready abstraction)
 ```
 
@@ -31,8 +31,7 @@ the schema/ERD, and [docs/api.md](docs/api.md) for the API surface.
 
 1. **Node.js** 18+ and npm
 2. **Python** 3.11+
-3. **PostgreSQL** 14+ with the **PostGIS** extension available (Windows: install PostgreSQL from
-   EnterpriseDB, then add PostGIS for your version via Stack Builder or the PostGIS Windows installer)
+3. **PostgreSQL** 14+ (no PostGIS extension required)
 
 ## Setup (Windows)
 
@@ -44,9 +43,7 @@ As the `postgres` superuser (adjust the path to your PostgreSQL `bin` directory)
 "C:\Program Files\PostgreSQL\<version>\bin\psql.exe" -U postgres -f scripts\setup_local_db.sql
 ```
 
-This creates the `rb_admin` role, the `rb_assets` database, and enables the `postgis` extension.
-If PostGIS isn't installed yet, install it first (Application Stack Builder, or the standalone
-PostGIS bundle for your PostgreSQL version), then re-run the script.
+This creates the `rb_admin` role and the `rb_assets` database.
 
 ### 2. Configure environment
 
@@ -91,15 +88,18 @@ Use any of the seeded demo accounts (password `Password123!` for all):
 |---|---|
 | state.admin@rnb.gov.in | State Administrator |
 | dept.admin@rnb.gov.in | R&B Department Administrator |
-| circle.north@rnb.gov.in | Circle / Division Officer |
-| subdivision.n1a@rnb.gov.in | Sub-Division Officer |
 | field.engineer@rnb.gov.in | Field Engineer / Inspector |
 | maintenance.officer@rnb.gov.in | Maintenance Officer |
-| auditor@rnb.gov.in | Auditor (read-only) |
 | contractor.user@rnb.gov.in | Contractor |
 
 All seed data (assets, users, inspections, work orders, projects) is **synthetic demo data** and
 does not represent real government records.
+
+## Deploying to Vercel
+
+See [docs/deployment.md](docs/deployment.md) — two Vercel projects (frontend + backend) plus a
+free Neon Postgres database, with the real tradeoffs of running this on serverless (document
+uploads need external storage in production) spelled out up front.
 
 ## Running tests
 
@@ -109,7 +109,7 @@ venv\Scripts\activate
 pytest
 ```
 
-Some tests require the local Postgres/PostGIS database configured above; the lifecycle and
+Some tests require the local PostgreSQL database configured above; the lifecycle and
 condition-scoring services also have pure unit tests that run without a database.
 
 ## Project layout
@@ -138,7 +138,7 @@ condition-scoring services also have pure unit tests that run without a database
 ## What's implemented (MVP scope)
 
 Authentication + RBAC + jurisdiction scoping, administrative hierarchy, asset registry with
-type-specific detail (roads/bridges/culverts/buildings/structures), PostGIS-backed GIS map with
+type-specific detail (roads/bridges/culverts/buildings/structures), GeoJSON-backed GIS map with
 filtering, an auditable lifecycle state machine, the full inspection workflow (assign → GPS →
 checklist → findings → photos → submit → supervisor review), deterministic/explainable condition
 & risk scoring, maintenance requests → approval → work orders → contractor assignment →

@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user, require_roles
+from app.auth.deps import require_roles
 from app.database import get_db
 from app.models.asset import Asset
 from app.models.enums import SystemRole
@@ -14,11 +14,15 @@ from app.utils.audit import record_audit
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
-_WRITE_ROLES = [r.value for r in [SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER]]
+_WRITE_ROLES = [r.value for r in [SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN]]
+_READ_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN,
+    SystemRole.FIELD_ENGINEER, SystemRole.MAINTENANCE_OFFICER,
+]]
 
 
 @router.get("", response_model=list[ProjectRead])
-def list_projects(db: Session = Depends(get_db), _=Depends(get_current_user)):
+def list_projects(db: Session = Depends(get_db), _=Depends(require_roles(*_READ_ROLES))):
     return db.query(Project).order_by(Project.created_at.desc()).all()
 
 
@@ -36,7 +40,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), user: 
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
-def get_project(project_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_project(project_id: UUID, db: Session = Depends(get_db), _=Depends(require_roles(*_READ_ROLES))):
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -51,7 +55,7 @@ def update_project(project_id: UUID, payload: ProjectUpdate, db: Session = Depen
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(project, field, value)
-    record_audit(db, actor_id=user.id, action="PROJECT_UPDATE", entity_type="project", entity_id=project.id, new_value=changes)
+    record_audit(db, actor_id=user.id, action="PROJECT_UPDATE", entity_type="project", entity_id=project.id, new_value=payload.model_dump(exclude_unset=True, mode="json"))
     db.commit()
     db.refresh(project)
     return project
@@ -77,7 +81,7 @@ def link_asset(project_id: UUID, payload: ProjectAssetLink, db: Session = Depend
 
 
 @router.get("/{project_id}/assets")
-def list_project_assets(project_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def list_project_assets(project_id: UUID, db: Session = Depends(get_db), _=Depends(require_roles(*_READ_ROLES))):
     rows = (
         db.query(Asset)
         .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)

@@ -1,13 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from geoalchemy2.shape import from_shape
-from shapely.geometry import Point
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth.deps import get_current_user, require_roles
 from app.database import get_db
-from app.gis.geometry import wkb_to_geojson
+from app.gis.geometry import geometry_to_geojson
 from app.models.approval import Approval
 from app.models.asset import Asset
 from app.models.condition import ConditionAssessment
@@ -21,29 +19,33 @@ from app.models.enums import (
 from app.models.inspection import Inspection, InspectionFinding
 from app.models.maintenance import MaintenanceRequest
 from app.models.user import User
+from app.permissions.jurisdiction import user_role_codes
 from app.schemas.inspection import InspectionAssign, InspectionRead, InspectionReview, InspectionSubmit
 from app.services.condition_service import compute_condition
 from app.utils.audit import record_audit
 
 router = APIRouter(prefix="/inspections", tags=["inspections"])
+_INSPECTION_READ_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.FIELD_ENGINEER,
+]]
 
 
 def _to_read(inspection: Inspection) -> InspectionRead:
     data = InspectionRead.model_validate(inspection)
-    data.gps = wkb_to_geojson(inspection.gps_point)
+    data.gps = geometry_to_geojson(inspection.gps_point)
     return data
 
 
 @router.get("", response_model=list[InspectionRead])
 def list_inspections(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(*_INSPECTION_READ_ROLES)),
     mine: bool = False,
     asset_id: UUID | None = None,
     status: InspectionStatus | None = None,
 ):
     query = db.query(Inspection).options(joinedload(Inspection.findings))
-    if mine:
+    if mine or user_role_codes(user) == {SystemRole.FIELD_ENGINEER.value}:
         query = query.filter(Inspection.inspector_id == user.id)
     if asset_id:
         query = query.filter(Inspection.asset_id == asset_id)
@@ -54,9 +56,11 @@ def list_inspections(
 
 
 @router.get("/{inspection_id}", response_model=InspectionRead)
-def get_inspection(inspection_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_inspection(inspection_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles(*_INSPECTION_READ_ROLES))):
     inspection = db.query(Inspection).options(joinedload(Inspection.findings)).filter(Inspection.id == inspection_id).first()
     if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    if user_role_codes(user) == {SystemRole.FIELD_ENGINEER.value} and inspection.inspector_id != user.id:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return _to_read(inspection)
 
@@ -66,7 +70,7 @@ def assign_inspection(
     payload: InspectionAssign,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     asset = db.get(Asset, payload.asset_id)
@@ -93,7 +97,7 @@ def submit_inspection(
     inspection_id: UUID,
     payload: InspectionSubmit,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(SystemRole.FIELD_ENGINEER)),
 ):
     inspection = db.query(Inspection).options(joinedload(Inspection.findings)).filter(Inspection.id == inspection_id).first()
     if not inspection:
@@ -109,12 +113,20 @@ def submit_inspection(
     inspection.remarks = payload.remarks
     inspection.status = InspectionStatus.SUBMITTED
     if payload.gps_lat is not None and payload.gps_lon is not None:
-        inspection.gps_point = from_shape(Point(payload.gps_lon, payload.gps_lat), srid=4326)
+        inspection.gps_point = {
+            "type": "Point",
+            "coordinates": [payload.gps_lon, payload.gps_lat],
+        }
 
     for finding in inspection.findings:
         db.delete(finding)
     for f in payload.findings:
         db.add(InspectionFinding(inspection_id=inspection.id, **f.model_dump()))
+
+    # Flush + expire so inspection.findings reflects the rows just written above —
+    # compute_condition() below reads that collection to score defect severity.
+    db.flush()
+    db.expire(inspection, ["findings"])
 
     asset = db.get(Asset, inspection.asset_id)
     open_requests = db.query(MaintenanceRequest).filter(
@@ -137,7 +149,7 @@ def review_inspection(
     payload: InspectionReview,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     inspection = db.query(Inspection).options(joinedload(Inspection.findings)).filter(Inspection.id == inspection_id).first()

@@ -1,12 +1,9 @@
 export type SystemRole =
   | "STATE_ADMIN"
   | "DEPARTMENT_ADMIN"
-  | "CIRCLE_DIVISION_OFFICER"
-  | "SUB_DIVISION_OFFICER"
   | "FIELD_ENGINEER"
   | "MAINTENANCE_OFFICER"
-  | "CONTRACTOR"
-  | "AUDITOR";
+  | "CONTRACTOR";
 
 export type AssetTypeCode = "ROAD" | "BRIDGE" | "CULVERT" | "BUILDING" | "PUBLIC_STRUCTURE" | "OTHER_FIXED_ASSET";
 
@@ -36,6 +33,21 @@ export type WorkOrderStatus = "CREATED" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETE
 
 export type ProjectStatus = "PROPOSED" | "SANCTIONED" | "IN_PROGRESS" | "COMPLETED" | "CLOSED";
 
+export type GrievanceCategory =
+  | "STRUCTURAL_DAMAGE"
+  | "POTHOLE"
+  | "WATER_LOGGING"
+  | "TREE_HAZARD"
+  | "ENCROACHMENT"
+  | "SAFETY_HAZARD"
+  | "ELECTRICAL_HAZARD"
+  | "OTHER";
+
+export type GrievanceStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
+
+export type TenderStatus = "DRAFT" | "PUBLISHED" | "BIDDING_CLOSED" | "AWARDED" | "CANCELLED";
+export type TenderBidStatus = "SUBMITTED" | "SHORTLISTED" | "REJECTED" | "AWARDED";
+
 export type DocumentType =
   | "LAND_RECORD"
   | "OWNERSHIP"
@@ -57,6 +69,7 @@ export interface CurrentUser {
   department_id: string | null;
   administrative_unit_id: string | null;
   roles: SystemRole[];
+  contractor_id: string | null;
 }
 
 export interface Department {
@@ -321,4 +334,56 @@ export interface NotificationItem {
   context: Record<string, unknown> | null;
   is_read: boolean;
   created_at: string;
+}
+
+export interface Grievance {
+  id: string;
+  grievance_code: string;
+  title: string;
+  description: string;
+  category: GrievanceCategory;
+  severity: FindingSeverity;
+  status: GrievanceStatus;
+  location: GeoJSONGeometry;
+  asset_id: string | null;
+  has_photo: boolean;
+  reporter_name: string | null;
+  reporter_contact: string | null;
+  assigned_to: string | null;
+  linked_maintenance_request_id: string | null;
+  resolution_notes: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export interface TenderBid {
+  id: string;
+  tender_id: string;
+  contractor_id: string;
+  contractor_name: string | null;
+  bid_amount: number;
+  remarks: string | null;
+  status: TenderBidStatus;
+  created_at: string;
+}
+
+export interface Tender {
+  id: string;
+  tender_number: string;
+  title: string;
+  description: string;
+  status: TenderStatus;
+  asset_id: string | null;
+  project_id: string | null;
+  department_id: string;
+  administrative_unit_id: string;
+  estimated_value: number | null;
+  emd_amount: number | null;
+  published_date: string | null;
+  submission_deadline: string | null;
+  awarded_bid_id: string | null;
+  awarded_at: string | null;
+  bid_count: number;
+  bids: TenderBid[];
 }

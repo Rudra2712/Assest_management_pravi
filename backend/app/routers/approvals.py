@@ -3,10 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import require_roles
 from app.database import get_db
 from app.models.approval import Approval
-from app.models.enums import ApprovalEntityType, ApprovalStatus
+from app.models.enums import ApprovalEntityType, ApprovalStatus, SystemRole
 from app.schemas.approval import ApprovalRead
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -15,7 +15,9 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 @router.get("", response_model=list[ApprovalRead])
 def list_approvals(
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_roles(*[r.value for r in [
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN,
+    ]])),
     entity_type: ApprovalEntityType | None = None,
     status: ApprovalStatus | None = None,
     entity_id: UUID | None = None,

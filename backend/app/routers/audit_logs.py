@@ -27,7 +27,7 @@ class AuditLogRead(ORMModel):
 @router.get("", response_model=list[AuditLogRead])
 def list_audit_logs(
     db: Session = Depends(get_db),
-    _=Depends(require_roles(SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.AUDITOR)),
+    _=Depends(require_roles(SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN)),
     entity_type: str | None = None,
     entity_id: UUID | None = None,
     actor_id: UUID | None = None,

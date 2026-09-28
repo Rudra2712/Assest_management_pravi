@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth.deps import get_current_user, require_roles
+from app.auth.deps import require_roles
 from app.database import get_db
 from app.models.asset import Asset, AssetType
 from app.models.enums import AssetTypeCode, ConditionRating, LifecycleStatus, SystemRole
@@ -26,12 +26,16 @@ _DETAIL_LOADERS = [
     joinedload(Asset.building_detail),
     joinedload(Asset.structure_detail),
 ]
+_ASSET_READ_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.FIELD_ENGINEER,
+    SystemRole.MAINTENANCE_OFFICER,
+]]
 
 
 @router.get("", response_model=Page[AssetListItem])
 def list_assets(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(*_ASSET_READ_ROLES)),
     q: str | None = None,
     asset_type_code: AssetTypeCode | None = None,
     lifecycle_status: LifecycleStatus | None = None,
@@ -82,7 +86,7 @@ def create_asset(
     payload: AssetCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     if db.query(Asset).filter(Asset.asset_code == payload.asset_code).first():
@@ -97,7 +101,7 @@ def create_asset(
 
 
 @router.get("/{asset_id}", response_model=AssetRead)
-def get_asset(asset_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_asset(asset_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles(*_ASSET_READ_ROLES))):
     asset = db.query(Asset).options(*_DETAIL_LOADERS).filter(Asset.id == asset_id, Asset.is_deleted.is_(False)).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -110,7 +114,7 @@ def update_asset(
     payload: AssetUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     asset = db.query(Asset).options(*_DETAIL_LOADERS).filter(Asset.id == asset_id, Asset.is_deleted.is_(False)).first()
@@ -123,7 +127,7 @@ def update_asset(
 
 
 @router.get("/{asset_id}/lifecycle-history")
-def lifecycle_history(asset_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def lifecycle_history(asset_id: UUID, db: Session = Depends(get_db), _=Depends(require_roles(*_ASSET_READ_ROLES))):
     events = (
         db.query(LifecycleEvent)
         .filter(LifecycleEvent.asset_id == asset_id)
@@ -149,7 +153,7 @@ def create_lifecycle_transition(
     payload: LifecycleTransitionRequest,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     asset = db.query(Asset).options(*_DETAIL_LOADERS).filter(Asset.id == asset_id, Asset.is_deleted.is_(False)).first()

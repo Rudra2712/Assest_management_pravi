@@ -5,7 +5,7 @@ import type { CurrentUser } from "../types";
 interface AuthContextValue {
   user: CurrentUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<CurrentUser>;
   logout: () => void;
   hasRole: (...roles: string[]) => boolean;
 }
@@ -14,36 +14,35 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  async function loadMe() {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const res = await api.get<CurrentUser>("/auth/me");
-      setUser(res.data);
-    } catch {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem("access_token")));
 
   useEffect(() => {
-    loadMe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!localStorage.getItem("access_token")) return;
+    let cancelled = false;
+    void api.get<CurrentUser>("/auth/me")
+      .then((res) => {
+        if (!cancelled) setUser(res.data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<CurrentUser> {
     const res = await api.post("/auth/login", { email, password });
     localStorage.setItem("access_token", res.data.access_token);
     localStorage.setItem("refresh_token", res.data.refresh_token);
     const me = await api.get<CurrentUser>("/auth/me");
     setUser(me.data);
+    return me.data;
   }
 
   function logout() {

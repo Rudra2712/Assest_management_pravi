@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, require_roles
 from app.database import get_db
 from app.models.asset import Asset, AssetType
-from app.models.enums import ConditionRating, InspectionStatus, ProjectStatus, WorkOrderStatus
+from app.models.enums import ConditionRating, InspectionStatus, ProjectStatus, SystemRole, WorkOrderStatus
 from app.models.geo import AdministrativeUnit
 from app.models.inspection import Inspection
 from app.models.maintenance import WorkOrder
@@ -16,10 +16,14 @@ from app.models.user import User
 from app.permissions.jurisdiction import apply_jurisdiction_filter
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+_REPORT_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN,
+    SystemRole.FIELD_ENGINEER, SystemRole.MAINTENANCE_OFFICER,
+]]
 
 
 @router.get("/dashboard")
-def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def dashboard(db: Session = Depends(get_db), user: User = Depends(require_roles(*_REPORT_ROLES))):
     asset_query = apply_jurisdiction_filter(
         db.query(Asset).filter(Asset.is_deleted.is_(False)), db, user, Asset.administrative_unit_id
     )
@@ -120,7 +124,7 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
 
 
 @router.get("/field-dashboard")
-def field_dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def field_dashboard(db: Session = Depends(get_db), user: User = Depends(require_roles(*_REPORT_ROLES))):
     today = date.today()
     my_inspections = db.query(Inspection).filter(Inspection.inspector_id == user.id)
     assigned = my_inspections.filter(Inspection.status.in_([InspectionStatus.ASSIGNED, InspectionStatus.IN_PROGRESS])).count()

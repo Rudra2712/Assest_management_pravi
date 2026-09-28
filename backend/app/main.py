@@ -14,12 +14,13 @@ from app.routers import (
     departments,
     documents,
     gis,
-    imports,
+    grievances,
     inspections,
     maintenance,
     notifications,
     projects,
     reports,
+    tenders,
     users,
     work_orders,
 )
@@ -54,8 +55,9 @@ for router in (
     approvals.router,
     notifications.router,
     reports.router,
-    imports.router,
     audit_logs.router,
+    grievances.router,
+    tenders.router,
 ):
     app.include_router(router, prefix=settings.API_V1_PREFIX)
 

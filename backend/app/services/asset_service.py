@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.gis.geometry import geojson_to_geometry_kind, geojson_to_wkb, wkb_to_geojson
+from app.gis.geometry import geojson_to_geometry, geojson_to_geometry_kind, geometry_to_geojson
 from app.models.asset import (
     Asset,
     AssetGeometry,
@@ -47,13 +47,13 @@ def _apply_geometry(db: Session, asset: Asset, geojson: dict | None) -> None:
     if geojson is None:
         return
     kind = geojson_to_geometry_kind(geojson)
-    wkb = geojson_to_wkb(geojson)
+    geometry = geojson_to_geometry(geojson)
     existing = db.query(AssetGeometry).filter(AssetGeometry.asset_id == asset.id).first()
     if existing:
         existing.geometry_kind = kind
-        existing.geom = wkb
+        existing.geom = geometry
     else:
-        db.add(AssetGeometry(asset_id=asset.id, geometry_kind=kind, geom=wkb))
+        db.add(AssetGeometry(asset_id=asset.id, geometry_kind=kind, geom=geometry))
 
 
 def create_asset(db: Session, payload, user: User) -> Asset:
@@ -112,7 +112,8 @@ def update_asset(db: Session, asset: Asset, payload, user: User) -> Asset:
     if payload.geometry is not None:
         _apply_geometry(db, asset, payload.geometry)
 
-    record_audit(db, actor_id=user.id, action="ASSET_UPDATE", entity_type="asset", entity_id=asset.id, old_value=old_value, new_value=update_fields)
+    audit_fields = payload.model_dump(exclude_unset=True, exclude={"road", "bridge", "culvert", "building", "structure", "geometry"}, mode="json")
+    record_audit(db, actor_id=user.id, action="ASSET_UPDATE", entity_type="asset", entity_id=asset.id, old_value=old_value, new_value=audit_fields)
     return asset
 
 
@@ -151,7 +152,7 @@ def serialize_asset(db: Session, asset: Asset) -> dict:
         "linked_project_id": asset.linked_project_id,
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
-        "geometry": wkb_to_geojson(asset.geometry.geom) if asset.geometry else None,
+        "geometry": geometry_to_geojson(asset.geometry.geom) if asset.geometry else None,
         "road": None,
         "bridge": None,
         "culvert": None,

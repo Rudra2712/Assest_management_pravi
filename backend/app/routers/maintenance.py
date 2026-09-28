@@ -14,12 +14,16 @@ from app.schemas.maintenance import MaintenanceRequestCreate, MaintenanceRequest
 from app.utils.audit import record_audit
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
+_MAINTENANCE_ACCESS_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN,
+    SystemRole.FIELD_ENGINEER, SystemRole.MAINTENANCE_OFFICER,
+]]
 
 
 @router.get("/requests", response_model=list[MaintenanceRequestRead])
 def list_requests(
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_roles(*_MAINTENANCE_ACCESS_ROLES)),
     asset_id: UUID | None = None,
     status: MaintenanceRequestStatus | None = None,
 ):
@@ -32,7 +36,7 @@ def list_requests(
 
 
 @router.post("/requests", response_model=MaintenanceRequestRead, status_code=201)
-def create_request(payload: MaintenanceRequestCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_request(payload: MaintenanceRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_roles(*_MAINTENANCE_ACCESS_ROLES))):
     asset = db.get(Asset, payload.asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -52,7 +56,7 @@ def decide_request(
     payload: MaintenanceRequestDecision,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     req = db.get(MaintenanceRequest, request_id)
@@ -88,8 +92,7 @@ def create_work_order(
     payload: WorkOrderCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER,
-        SystemRole.SUB_DIVISION_OFFICER, SystemRole.MAINTENANCE_OFFICER,
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.MAINTENANCE_OFFICER,
     ]])),
 ):
     req = db.get(MaintenanceRequest, request_id)
@@ -113,6 +116,7 @@ def create_work_order(
         **payload.model_dump(exclude={"estimated_cost"}),
     )
     db.add(work_order)
+    db.flush()
     req.status = MaintenanceRequestStatus.CONVERTED_TO_WORK_ORDER
 
     record_audit(db, actor_id=user.id, action="WORK_ORDER_CREATE", entity_type="work_order", entity_id=work_order.id, new_value={"maintenance_request_id": str(req.id)})

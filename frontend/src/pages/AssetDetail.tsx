@@ -1,15 +1,40 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import * as turf from "@turf/turf";
+import { TriangleAlert } from "lucide-react";
 import { getAsset, getLifecycleHistory, transitionLifecycle } from "../api/assets";
 import { listInspections } from "../api/inspections";
 import { listMaintenanceRequests, listWorkOrders } from "../api/maintenance";
 import { listDocuments, uploadDocument } from "../api/documents";
+import { listGrievances } from "../api/grievances";
 import { api } from "../api/client";
-import { LifecycleBadge, ConditionBadge, SeverityBadge } from "../components/Badge";
+import { LifecycleBadge, ConditionBadge, SeverityBadge, GrievanceStatusBadge } from "../components/Badge";
 import AssetMiniMap from "../components/AssetMiniMap";
 import { useAuth } from "../hooks/useAuth";
-import type { LifecycleStatus } from "../types";
+import type { GeoJSONGeometry, LifecycleStatus } from "../types";
+
+function formatCoord([lon, lat]: [number, number]): string {
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+function useGpsInfo(geometry: GeoJSONGeometry | null) {
+  return useMemo(() => {
+    if (!geometry) return null;
+    if (geometry.type === "Point") {
+      const coord = geometry.coordinates as [number, number];
+      return { kind: "point" as const, point: coord };
+    }
+    if (geometry.type === "LineString") {
+      const coords = geometry.coordinates as [number, number][];
+      const lengthKm = turf.length(turf.lineString(coords), { units: "kilometers" });
+      return { kind: "line" as const, start: coords[0], end: coords[coords.length - 1], lengthKm };
+    }
+    const centroid = turf.centroid(turf.polygon(geometry.coordinates as number[][][])).geometry.coordinates as [number, number];
+    const areaSqm = turf.area(turf.polygon(geometry.coordinates as number[][][]));
+    return { kind: "polygon" as const, centroid, areaSqm };
+  }, [geometry]);
+}
 
 const NEXT_STATUS_HINTS: Record<string, LifecycleStatus[]> = {
   PLANNED: ["SANCTIONED"],
@@ -47,6 +72,9 @@ export default function AssetDetail() {
   const { data: maintenanceRequests } = useQuery({ queryKey: ["asset-maintenance", id], queryFn: () => listMaintenanceRequests({ asset_id: id }), enabled: !!id });
   const { data: workOrders } = useQuery({ queryKey: ["asset-work-orders", id], queryFn: () => listWorkOrders({ asset_id: id }), enabled: !!id });
   const { data: documents } = useQuery({ queryKey: ["asset-documents", id], queryFn: () => listDocuments("asset", id!), enabled: !!id });
+  const { data: grievances } = useQuery({ queryKey: ["asset-grievances", id], queryFn: () => listGrievances({ asset_id: id }), enabled: !!id });
+
+  const gps = useGpsInfo(asset?.geometry ?? null);
 
   const transitionMutation = useMutation({
     mutationFn: () => transitionLifecycle(id!, selectedStatus as LifecycleStatus, reason || undefined),
@@ -75,7 +103,7 @@ export default function AssetDetail() {
 
   if (isLoading || !asset) return <div className="text-slate-500">Loading asset…</div>;
 
-  const canEdit = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
+  const canEdit = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
   const nextOptions = NEXT_STATUS_HINTS[asset.lifecycle_status] ?? [];
 
   return (
@@ -109,7 +137,7 @@ export default function AssetDetail() {
             <section className="bg-white rounded-lg border border-slate-200 p-4">
               <h2 className="text-sm font-semibold text-slate-700 mb-2">{asset.asset_type_code.replaceAll("_", " ")} Details</h2>
               {Object.entries(asset.road ?? asset.bridge ?? asset.culvert ?? asset.building ?? asset.structure ?? {}).map(([k, v]) => (
-                <DetailRow key={k} label={k.replaceAll("_", " ")} value={typeof v === "object" ? JSON.stringify(v) : String(v ?? "")} />
+                <DetailRow key={k} label={k.replaceAll("_", " ")} value={v == null ? null : typeof v === "object" ? JSON.stringify(v) : String(v)} />
               ))}
             </section>
           )}
@@ -227,10 +255,51 @@ export default function AssetDetail() {
         <div className="space-y-6">
           {asset.geometry && (
             <section className="bg-white rounded-lg border border-slate-200 p-4">
-              <h2 className="text-sm font-semibold text-slate-700 mb-2">Location</h2>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold text-slate-700">Location</h2>
+                <Link to={`/report?asset_id=${asset.id}`} className="text-xs text-orange-600 hover:underline flex items-center gap-1">
+                  <TriangleAlert size={12} /> Report an issue
+                </Link>
+              </div>
               <AssetMiniMap geometry={asset.geometry} />
+
+              {gps?.kind === "line" && (
+                <div className="mt-3 text-sm space-y-1">
+                  <DetailRow label="Start (GPS)" value={<span className="font-mono text-xs">{formatCoord(gps.start)}</span>} />
+                  <DetailRow label="End (GPS)" value={<span className="font-mono text-xs">{formatCoord(gps.end)}</span>} />
+                  <DetailRow label="Measured Length" value={`${gps.lengthKm.toFixed(2)} km`} />
+                </div>
+              )}
+              {gps?.kind === "point" && (
+                <div className="mt-3 text-sm">
+                  <DetailRow label="GPS Coordinates" value={<span className="font-mono text-xs">{formatCoord(gps.point)}</span>} />
+                </div>
+              )}
+              {gps?.kind === "polygon" && (
+                <div className="mt-3 text-sm space-y-1">
+                  <DetailRow label="Centroid (GPS)" value={<span className="font-mono text-xs">{formatCoord(gps.centroid)}</span>} />
+                  <DetailRow label="Footprint Area" value={`${gps.areaSqm.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²`} />
+                </div>
+              )}
             </section>
           )}
+
+          <section className="bg-white rounded-lg border border-slate-200 p-4">
+            <h2 className="text-sm font-semibold text-slate-700 mb-2">Grievances</h2>
+            <ul className="space-y-2">
+              {grievances?.map((g) => (
+                <li key={g.id} className="text-sm border-b border-slate-100 pb-2">
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="font-medium text-slate-800">{g.title}</span>
+                    <GrievanceStatusBadge status={g.status} />
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">{g.category.replaceAll("_", " ")} · <SeverityBadge severity={g.severity} /></div>
+                </li>
+              ))}
+              {!grievances?.length && <li className="text-sm text-slate-400">No grievances reported for this asset.</li>}
+            </ul>
+            <Link to="/grievances" className="text-xs text-rb-navy hover:underline mt-2 inline-block">View all grievances →</Link>
+          </section>
         </div>
       </div>
     </div>

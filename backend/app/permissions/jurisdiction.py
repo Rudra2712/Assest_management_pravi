@@ -23,7 +23,7 @@ def has_jurisdiction_wide_access(user: User) -> bool:
 
 def jurisdiction_unit_ids(db: Session, user: User) -> list[str] | None:
     """Returns the administrative_unit ids this user's role grants scope them
-    to, or None meaning unrestricted (state/department admin, auditor)."""
+    to, or None meaning unrestricted (state/department admin)."""
 
     if has_jurisdiction_wide_access(user):
         return None

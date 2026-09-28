@@ -60,7 +60,7 @@ export default function AssetForm() {
   const [departmentId, setDepartmentId] = useState("");
   const [administrativeUnitId, setAdministrativeUnitId] = useState("");
   const [detail, setDetail] = useState<Record<string, string>>({});
-  const [geometryText, setGeometryText] = useState('{"type":"Point","coordinates":[73.85,18.52]}');
+  const [geometryText, setGeometryText] = useState('{"type":"Point","coordinates":[72.5714,23.0225]}');
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({

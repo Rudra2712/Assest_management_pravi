@@ -18,6 +18,7 @@ ALLOWED_LINKED_ENTITY_FOLDERS = {
     "maintenance_request": "maintenance",
     "work_order": "maintenance",
     "project": "projects",
+    "grievance": "grievances",
 }
 DEFAULT_FOLDER = "documents"
 

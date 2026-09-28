@@ -54,8 +54,8 @@ export default function Maintenance() {
   });
 
   const canRequest = true;
-  const canDecide = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
-  const canConvert = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER", "MAINTENANCE_OFFICER");
+  const canDecide = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
+  const canConvert = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "MAINTENANCE_OFFICER");
 
   return (
     <div className="space-y-4">

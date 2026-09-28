@@ -1,18 +1,25 @@
+from math import cos, pi, radians
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from geoalchemy2 import functions as geofunc
+from shapely.geometry import Point, shape
+from shapely.ops import transform
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import require_roles
 from app.database import get_db
-from app.gis.geometry import wkb_to_geojson
+from app.gis.geometry import geometry_to_geojson
 from app.models.asset import Asset, AssetGeometry, AssetType
-from app.models.enums import AssetTypeCode, ConditionRating, LifecycleStatus
+from app.models.enums import AssetTypeCode, ConditionRating, LifecycleStatus, SystemRole
 from app.models.user import User
 from app.permissions.jurisdiction import apply_jurisdiction_filter
 
 router = APIRouter(prefix="/gis", tags=["gis"])
+_GIS_READ_ROLES = [r.value for r in [
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN,
+    SystemRole.FIELD_ENGINEER, SystemRole.MAINTENANCE_OFFICER,
+]]
+EARTH_RADIUS_M = 6_371_008.8
 
 
 def _base_query(db: Session, user: User):
@@ -28,7 +35,7 @@ def _base_query(db: Session, user: User):
 def _to_feature(asset: Asset, geom: AssetGeometry, asset_type: AssetType) -> dict:
     return {
         "type": "Feature",
-        "geometry": wkb_to_geojson(geom.geom),
+        "geometry": geometry_to_geojson(geom.geom),
         "properties": {
             "id": str(asset.id),
             "asset_code": asset.asset_code,
@@ -41,10 +48,22 @@ def _to_feature(asset: Asset, geom: AssetGeometry, asset_type: AssetType) -> dic
     }
 
 
+def _distance_from_point_m(geojson: dict, lat: float, lon: float) -> float:
+    meters_per_degree = EARTH_RADIUS_M * pi / 180
+    x_scale = meters_per_degree * cos(radians(lat))
+
+    def project(x, y, z=None):
+        projected = ((x - lon) * x_scale, (y - lat) * meters_per_degree)
+        return (*projected, z) if z is not None else projected
+
+    projected_geometry = transform(project, shape(geojson))
+    return projected_geometry.distance(Point(0, 0))
+
+
 @router.get("/assets.geojson")
 def assets_geojson(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(*_GIS_READ_ROLES)),
     asset_type_code: AssetTypeCode | None = None,
     lifecycle_status: LifecycleStatus | None = None,
     current_condition: ConditionRating | None = None,
@@ -70,11 +89,13 @@ def nearby_assets(
     lon: float = Query(..., ge=-180, le=180),
     radius_m: float = Query(1000, gt=0, le=50000),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(*_GIS_READ_ROLES)),
 ):
-    point = geofunc.ST_SetSRID(geofunc.ST_MakePoint(lon, lat), 4326)
-    query = _base_query(db, user).filter(
-        geofunc.ST_DWithin(geofunc.ST_Transform(AssetGeometry.geom, 3857), geofunc.ST_Transform(point, 3857), radius_m)
-    )
-    rows = query.limit(500).all()
-    return {"type": "FeatureCollection", "features": [_to_feature(a, g, t) for a, g, t in rows]}
+    rows = _base_query(db, user).limit(5000).all()
+    features = []
+    for asset, geometry, asset_type in rows:
+        if _distance_from_point_m(geometry.geom, lat, lon) <= radius_m:
+            features.append(_to_feature(asset, geometry, asset_type))
+            if len(features) == 500:
+                break
+    return {"type": "FeatureCollection", "features": features}

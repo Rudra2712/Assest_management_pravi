@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignUserRole, createUser, listAdminUnits, listDepartments, listUsers } from "../api/admin";
 
 const ROLES = [
-  "STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER",
-  "FIELD_ENGINEER", "MAINTENANCE_OFFICER", "CONTRACTOR", "AUDITOR",
+  "STATE_ADMIN", "DEPARTMENT_ADMIN", "FIELD_ENGINEER", "MAINTENANCE_OFFICER", "CONTRACTOR",
 ];
 
 export default function UserManagement() {
@@ -19,7 +18,7 @@ export default function UserManagement() {
   const [password, setPassword] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [administrativeUnitId, setAdministrativeUnitId] = useState("");
-  const [roleCode, setRoleCode] = useState(ROLES[3]);
+  const [roleCode, setRoleCode] = useState(ROLES[2]);
 
   const createMutation = useMutation({
     mutationFn: () =>

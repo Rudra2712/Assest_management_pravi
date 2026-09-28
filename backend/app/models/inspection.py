@@ -4,8 +4,6 @@ from datetime import date, datetime
 from sqlalchemy import ForeignKey, String, Text, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from geoalchemy2 import Geometry
-
 from app.database import Base, UUIDPKMixin, TimestampMixin
 from app.models.enums import AssetTypeCode, InspectionStatus, FindingSeverity, ConditionRating
 
@@ -44,7 +42,7 @@ class Inspection(UUIDPKMixin, TimestampMixin, Base):
     assigned_date: Mapped[date | None] = mapped_column(nullable=True)
     inspection_date: Mapped[date | None] = mapped_column(nullable=True)
 
-    gps_point = mapped_column(Geometry(geometry_type="POINT", srid=4326), nullable=True)
+    gps_point: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     checklist_responses: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     overall_condition: Mapped[ConditionRating | None] = mapped_column(nullable=True)

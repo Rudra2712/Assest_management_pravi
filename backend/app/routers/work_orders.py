@@ -7,30 +7,51 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user, require_roles
 from app.database import get_db
 from app.models.asset import Asset
+from app.models.contractor import Contractor
 from app.models.enums import LifecycleStatus, SystemRole, WorkOrderStatus
 from app.models.maintenance import MaintenanceRecord, WorkOrder
 from app.models.user import User
 from app.schemas.maintenance import WorkOrderAssign, WorkOrderComplete, WorkOrderRead, WorkOrderVerify
 from app.services.lifecycle_service import ALLOWED_TRANSITIONS, transition_asset
 from app.utils.audit import record_audit
+from app.permissions.jurisdiction import user_role_codes
 
 router = APIRouter(prefix="/work-orders", tags=["work-orders"])
 
 _MAINTENANCE_ROLES = [r.value for r in [
-    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER,
-    SystemRole.SUB_DIVISION_OFFICER, SystemRole.MAINTENANCE_OFFICER,
+    SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.MAINTENANCE_OFFICER,
 ]]
+
+
+def _require_work_order_access(db: Session, work_order: WorkOrder, user: User) -> None:
+    roles = user_role_codes(user)
+    if roles & set(_MAINTENANCE_ROLES):
+        return
+    contractor = db.query(Contractor).filter(Contractor.user_id == user.id).first()
+    if SystemRole.CONTRACTOR.value in roles and contractor and work_order.contractor_id == contractor.id:
+        return
+    raise HTTPException(status_code=404, detail="Work order not found")
 
 
 @router.get("", response_model=list[WorkOrderRead])
 def list_work_orders(
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    user: User = Depends(get_current_user),
     asset_id: UUID | None = None,
     status: WorkOrderStatus | None = None,
     contractor_id: UUID | None = None,
 ):
     query = db.query(WorkOrder)
+    roles = user_role_codes(user)
+    if SystemRole.CONTRACTOR.value in roles:
+        contractor = db.query(Contractor).filter(Contractor.user_id == user.id).first()
+        if not contractor:
+            return []
+        query = query.filter(WorkOrder.contractor_id == contractor.id)
+        if contractor_id and contractor_id != contractor.id:
+            return []
+    elif not roles & set(_MAINTENANCE_ROLES):
+        raise HTTPException(status_code=403, detail="Insufficient role to view work orders")
     if asset_id:
         query = query.filter(WorkOrder.asset_id == asset_id)
     if status:
@@ -41,10 +62,11 @@ def list_work_orders(
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderRead)
-def get_work_order(work_order_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_work_order(work_order_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     wo = db.get(WorkOrder, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
+    _require_work_order_access(db, wo, user)
     return wo
 
 
@@ -68,17 +90,18 @@ def assign_work_order(
     wo.status = WorkOrderStatus.ASSIGNED
 
     db.add(MaintenanceRecord(work_order_id=wo.id, event="ASSIGNED", recorded_by=user.id))
-    record_audit(db, actor_id=user.id, action="WORK_ORDER_ASSIGN", entity_type="work_order", entity_id=wo.id, new_value=payload.model_dump(exclude_unset=True))
+    record_audit(db, actor_id=user.id, action="WORK_ORDER_ASSIGN", entity_type="work_order", entity_id=wo.id, new_value=payload.model_dump(exclude_unset=True, mode="json"))
     db.commit()
     db.refresh(wo)
     return wo
 
 
 @router.post("/{work_order_id}/start", response_model=WorkOrderRead)
-def start_work_order(work_order_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles(*_MAINTENANCE_ROLES))):
+def start_work_order(work_order_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     wo = db.get(WorkOrder, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
+    _require_work_order_access(db, wo, user)
     if wo.status != WorkOrderStatus.ASSIGNED:
         raise HTTPException(status_code=400, detail="Work order must be assigned before it can start")
 
@@ -99,11 +122,12 @@ def complete_work_order(
     work_order_id: UUID,
     payload: WorkOrderComplete,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(*_MAINTENANCE_ROLES)),
+    user: User = Depends(get_current_user),
 ):
     wo = db.get(WorkOrder, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
+    _require_work_order_access(db, wo, user)
     if wo.status != WorkOrderStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Work order must be in progress to complete")
 
@@ -127,7 +151,7 @@ def verify_work_order(
     payload: WorkOrderVerify,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*[r.value for r in [
-        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN, SystemRole.CIRCLE_DIVISION_OFFICER, SystemRole.SUB_DIVISION_OFFICER
+        SystemRole.STATE_ADMIN, SystemRole.DEPARTMENT_ADMIN
     ]])),
 ):
     wo = db.get(WorkOrder, work_order_id)
@@ -154,6 +178,10 @@ def verify_work_order(
 
 
 @router.get("/{work_order_id}/history")
-def work_order_history(work_order_id: UUID, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def work_order_history(work_order_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    work_order = db.get(WorkOrder, work_order_id)
+    if not work_order:
+        raise HTTPException(status_code=404, detail="Work order not found")
+    _require_work_order_access(db, work_order, user)
     records = db.query(MaintenanceRecord).filter(MaintenanceRecord.work_order_id == work_order_id).order_by(MaintenanceRecord.created_at).all()
     return [{"id": r.id, "event": r.event, "notes": r.notes, "recorded_by": r.recorded_by, "created_at": r.created_at} for r in records]

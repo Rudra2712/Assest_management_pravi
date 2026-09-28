@@ -1,7 +1,6 @@
 import uuid
 from datetime import date
 
-from geoalchemy2 import Geometry
 from sqlalchemy import ForeignKey, String, Numeric, Date, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -84,8 +83,7 @@ class AssetGeometry(UUIDPKMixin, TimestampMixin, Base):
 
     asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), unique=True, nullable=False)
     geometry_kind: Mapped[GeometryKind] = mapped_column(nullable=False)
-    # Generic GEOMETRY column (SRID 4326 / WGS84) holds POINT, LINESTRING or POLYGON per geometry_kind.
-    geom = mapped_column(Geometry(geometry_type="GEOMETRY", srid=4326, spatial_index=True), nullable=False)
+    geom: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     asset: Mapped["Asset"] = relationship(back_populates="geometry")
 

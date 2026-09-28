@@ -1,4 +1,4 @@
-"""End-to-end API tests against a real local PostgreSQL + PostGIS database
+"""End-to-end API tests against a real local PostgreSQL database
 (see conftest.py — the whole module is skipped if one isn't reachable)."""
 
 
@@ -80,7 +80,7 @@ def test_jurisdiction_scoping_hides_assets_outside_subtree(client, reference_dat
         "department_id": str(reference_data["department"].id), "administrative_unit_id": str(reference_data["other_division"].id),
     }, headers=admin_headers)
 
-    make_user("officer.div1@example.com", "SUB_DIVISION_OFFICER", reference_data["division"])
+    make_user("officer.div1@example.com", "FIELD_ENGINEER", reference_data["division"])
     officer_headers = auth_headers("officer.div1@example.com")
 
     res = client.get("/api/v1/assets", headers=officer_headers)
@@ -109,6 +109,11 @@ def test_gis_geojson_returns_feature_for_created_asset(client, reference_data, m
     assert body["type"] == "FeatureCollection"
     names = {f["properties"]["name"] for f in body["features"]}
     assert "GIS Test Bridge" in names
+
+    res = client.get("/api/v1/gis/nearby.geojson?lat=18.52&lon=73.85&radius_m=1000", headers=headers)
+    assert res.status_code == 200
+    nearby_names = {f["properties"]["name"] for f in res.json()["features"]}
+    assert "GIS Test Bridge" in nearby_names
 
 
 def test_inspection_submit_creates_condition_assessment(client, reference_data, make_user, auth_headers):
@@ -142,7 +147,9 @@ def test_inspection_submit_creates_condition_assessment(client, reference_data, 
     assert "age" in history[0]["factor_inputs"]
 
 
-def test_maintenance_workflow_request_to_work_order(client, reference_data, make_user, auth_headers):
+def test_maintenance_workflow_request_to_work_order(client, db_session, reference_data, make_user, auth_headers):
+    from app.models.contractor import Contractor
+
     admin = make_user("admin7@example.com", "STATE_ADMIN", reference_data["state"])
     admin_headers = auth_headers("admin7@example.com")
 
@@ -162,15 +169,28 @@ def test_maintenance_workflow_request_to_work_order(client, reference_data, make
     wo = client.post(f"/api/v1/maintenance/requests/{req['id']}/work-order", json={}, headers=admin_headers).json()
     assert wo["status"] == "CREATED"
 
+    contractor_user = make_user("assigned.contractor@example.com", "CONTRACTOR", reference_data["division"])
+    other_user = make_user("other.contractor@example.com", "CONTRACTOR", reference_data["division"])
+    contractor = Contractor(name="Assigned Contractor", user_id=contractor_user.id)
+    other_contractor = Contractor(name="Other Contractor", user_id=other_user.id)
+    db_session.add_all([contractor, other_contractor])
+    db_session.flush()
+    contractor_headers = auth_headers("assigned.contractor@example.com")
+    other_headers = auth_headers("other.contractor@example.com")
+
     # cannot create a second work order for the same request
     res = client.post(f"/api/v1/maintenance/requests/{req['id']}/work-order", json={}, headers=admin_headers)
     assert res.status_code in (400, 409)
 
-    res = client.post(f"/api/v1/work-orders/{wo['id']}/assign", json={"assigned_officer_id": str(admin.id)}, headers=admin_headers)
+    res = client.post(f"/api/v1/work-orders/{wo['id']}/assign", json={"contractor_id": str(contractor.id), "assigned_officer_id": str(admin.id)}, headers=admin_headers)
     assert res.json()["status"] == "ASSIGNED"
-    res = client.post(f"/api/v1/work-orders/{wo['id']}/start", headers=admin_headers)
+    assert len(client.get("/api/v1/work-orders", headers=contractor_headers).json()) == 1
+    assert client.get(f"/api/v1/work-orders/{wo['id']}", headers=contractor_headers).status_code == 200
+    assert client.get(f"/api/v1/work-orders/{wo['id']}", headers=other_headers).status_code == 404
+    assert client.get("/api/v1/work-orders", headers=other_headers).json() == []
+    res = client.post(f"/api/v1/work-orders/{wo['id']}/start", headers=contractor_headers)
     assert res.json()["status"] == "IN_PROGRESS"
-    res = client.post(f"/api/v1/work-orders/{wo['id']}/complete", json={"actual_cost": 1000, "completion_remarks": "done"}, headers=admin_headers)
+    res = client.post(f"/api/v1/work-orders/{wo['id']}/complete", json={"actual_cost": 1000, "completion_remarks": "done"}, headers=contractor_headers)
     assert res.json()["status"] == "COMPLETED"
     res = client.post(f"/api/v1/work-orders/{wo['id']}/verify", json={"verified": True}, headers=admin_headers)
     assert res.json()["status"] == "CLOSED"
@@ -187,12 +207,12 @@ def test_document_upload_and_metadata(client, reference_data, make_user, auth_he
     res = client.post(
         "/api/v1/documents",
         data={"document_type": "PHOTOGRAPH", "linked_entity_type": "asset", "linked_entity_id": asset["id"]},
-        files={"file": ("test.txt", b"hello world", "text/plain")},
+        files={"file": ("test.pdf", b"hello world", "application/pdf")},
         headers=headers,
     )
     assert res.status_code == 201, res.text
     doc = res.json()
-    assert doc["filename"] == "test.txt"
+    assert doc["filename"] == "test.pdf"
     assert doc["current_version"] == 1
 
     listed = client.get("/api/v1/documents", params={"linked_entity_type": "asset", "linked_entity_id": asset["id"]}, headers=headers).json()
@@ -204,53 +224,17 @@ def test_document_upload_and_metadata(client, reference_data, make_user, auth_he
 
 
 def test_audit_log_created_on_asset_create(client, reference_data, make_user, auth_headers):
-    make_user("auditor1@example.com", "AUDITOR", reference_data["state"])
     make_user("admin9@example.com", "STATE_ADMIN", reference_data["state"])
     admin_headers = auth_headers("admin9@example.com")
-    auditor_headers = auth_headers("auditor1@example.com")
 
     asset = client.post("/api/v1/assets", json={
         "asset_code": "RB-AUDIT-0001", "name": "Audit Test Asset", "asset_type_code": "BRIDGE",
         "department_id": str(reference_data["department"].id), "administrative_unit_id": str(reference_data["division"].id),
     }, headers=admin_headers).json()
 
-    res = client.get("/api/v1/audit-logs", params={"entity_type": "asset", "entity_id": asset["id"]}, headers=auditor_headers)
+    res = client.get("/api/v1/audit-logs", params={"entity_type": "asset", "entity_id": asset["id"]}, headers=admin_headers)
     assert res.status_code == 200
     logs = res.json()
     assert any(log["action"] == "ASSET_CREATE" for log in logs)
 
 
-def test_csv_import_preview_flags_missing_columns(client, reference_data, make_user, auth_headers):
-    make_user("importer1@example.com", "STATE_ADMIN", reference_data["state"])
-    headers = auth_headers("importer1@example.com")
-    bad_csv = b"name,asset_type_code\nSome Road,ROAD\n"
-    res = client.post("/api/v1/imports/assets/preview", files={"file": ("bad.csv", bad_csv, "text/csv")}, headers=headers)
-    assert res.status_code == 400
-    assert "asset_code" in res.json()["detail"]
-
-
-def test_csv_import_commit_skips_duplicates(client, reference_data, make_user, auth_headers):
-    make_user("importer2@example.com", "STATE_ADMIN", reference_data["state"])
-    headers = auth_headers("importer2@example.com")
-
-    client.post("/api/v1/assets", json={
-        "asset_code": "RB-CSV-0001", "name": "Existing Asset", "asset_type_code": "ROAD",
-        "department_id": str(reference_data["department"].id), "administrative_unit_id": str(reference_data["division"].id),
-    }, headers=headers)
-
-    csv_content = (
-        "asset_code,name,asset_type_code,department_code,administrative_unit_code\n"
-        f"RB-CSV-0001,Existing Asset,ROAD,{reference_data['department'].code},{reference_data['division'].code}\n"
-        f"RB-CSV-0002,New Asset,ROAD,{reference_data['department'].code},{reference_data['division'].code}\n"
-    ).encode()
-
-    preview = client.post("/api/v1/imports/assets/preview", files={"file": ("assets.csv", csv_content, "text/csv")}, headers=headers).json()
-    assert preview["duplicate_count"] == 1
-    assert preview["importable_count"] == 1
-
-    result = client.post("/api/v1/imports/assets/commit", files={"file": ("assets.csv", csv_content, "text/csv")}, headers=headers).json()
-    assert result["imported"] == 1
-    assert result["skipped_duplicates"] == 1
-
-    listed = client.get("/api/v1/assets", params={"q": "New Asset"}, headers=headers).json()
-    assert listed["total"] == 1

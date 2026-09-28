@@ -9,13 +9,14 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: wo, isLoading } = useQuery({ queryKey: ["work-order", id], queryFn: () => getWorkOrder(id!), enabled: !!id });
   const { data: history } = useQuery({ queryKey: ["work-order-history", id], queryFn: () => getWorkOrderHistory(id!), enabled: !!id });
-  const { data: contractors } = useQuery({ queryKey: ["contractors"], queryFn: listContractors });
-  const { data: users } = useQuery({ queryKey: ["users-for-assign"], queryFn: listUsers });
+  const canManage = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "MAINTENANCE_OFFICER");
+  const { data: contractors } = useQuery({ queryKey: ["contractors"], queryFn: listContractors, enabled: canManage });
+  const { data: users } = useQuery({ queryKey: ["users-for-assign"], queryFn: listUsers, enabled: hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN") });
 
   const [contractorId, setContractorId] = useState("");
   const [officerId, setOfficerId] = useState("");
@@ -43,10 +44,10 @@ export default function WorkOrderDetail() {
     onSuccess: invalidate,
   });
 
-  const canManage = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER", "MAINTENANCE_OFFICER");
-  const canVerify = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
+  const canVerify = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
 
   if (isLoading || !wo) return <div className="text-slate-500">Loading…</div>;
+  const canExecute = canManage || (hasRole("CONTRACTOR") && user?.contractor_id === wo.contractor_id);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -72,11 +73,11 @@ export default function WorkOrderDetail() {
         </div>
       )}
 
-      {canManage && wo.status === "ASSIGNED" && (
+      {canExecute && wo.status === "ASSIGNED" && (
         <button onClick={() => startMutation.mutate()} className="bg-amber-600 text-white text-sm px-4 py-2 rounded-md">Start Work</button>
       )}
 
-      {canManage && wo.status === "IN_PROGRESS" && (
+      {canExecute && wo.status === "IN_PROGRESS" && (
         <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Complete Work Order</h2>
           <input placeholder="Actual cost" type="number" value={actualCost} onChange={(e) => setActualCost(e.target.value)} className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />

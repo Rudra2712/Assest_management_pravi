@@ -27,3 +27,5 @@ from app.models.document import Document, DocumentVersion  # noqa
 from app.models.approval import Approval  # noqa
 from app.models.notification import Notification  # noqa
 from app.models.audit import AuditLog  # noqa
+from app.models.grievance import Grievance  # noqa
+from app.models.tender import Tender, TenderBid  # noqa

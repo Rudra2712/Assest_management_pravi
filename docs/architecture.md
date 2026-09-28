@@ -3,14 +3,14 @@
 ## Overview
 
 A modular monolith, deliberately simplified for a hackathon MVP: one FastAPI backend, one React
-frontend, one PostgreSQL/PostGIS database, local disk for file storage. No microservices, no
+frontend, one PostgreSQL database, local disk for file storage. No microservices, no
 message broker, no reverse proxy.
 
 ```mermaid
 flowchart TB
     U[Government Users<br/>State/Circle/Division/Field/Contractor] --> FE[React + Vite + Tailwind<br/>GIS map, dashboards, forms]
     FE -->|REST /api/v1| BE[FastAPI<br/>single modular app]
-    BE --> DB[(PostgreSQL + PostGIS)]
+    BE --> DB[(PostgreSQL)]
     BE --> FS[(Local disk<br/>backend/uploads/)]
 ```
 
@@ -38,8 +38,8 @@ piece removed has a stated migration path back in if the project continues past 
 | `schemas/` | Pydantic request/response models |
 | `routers/` | One router per resource group, mounted under `/api/v1` |
 | `services/` | Business logic that doesn't belong in a router: lifecycle state machine, condition
-  scoring, asset CRUD orchestration, CSV import, notifications |
-| `gis/` | GeoJSON ⇄ PostGIS geometry conversion (`geoalchemy2` + `shapely`) |
+  scoring, asset CRUD orchestration, notifications |
+| `gis/` | GeoJSON validation and geometry-kind helpers |
 | `utils/` | Local file storage abstraction, audit log writer |
 
 Authorization is enforced in every router via FastAPI dependencies (`require_roles(...)`), never
@@ -60,19 +60,18 @@ MapLibre GL against the backend's GeoJSON endpoints (`/gis/assets.geojson`, `/gi
 sequenceDiagram
     participant FE as React (MapLibre GL)
     participant BE as FastAPI /gis
-    participant DB as PostGIS
+    participant DB as PostgreSQL
 
     FE->>BE: GET /gis/assets.geojson?asset_type_code=ROAD&...
     BE->>DB: SELECT ... JOIN asset_geometries ON ... (jurisdiction-filtered)
-    DB-->>BE: rows with PostGIS geometry (WKB)
-    BE->>BE: geoalchemy2.shape.to_shape + shapely.geometry.mapping
+    DB-->>BE: rows with GeoJSON geometry (JSONB)
     BE-->>FE: GeoJSON FeatureCollection
     FE->>FE: map.getSource("assets").setData(...)
 ```
 
-Geometry is stored once per asset in `asset_geometries.geom` (a generic PostGIS `GEOMETRY` column,
-SRID 4326, GIST-indexed) so a single table serves points (bridges/culverts/structures), lines
-(roads) and polygons (buildings) without per-type geometry columns.
+Geometry is stored once per asset in `asset_geometries.geom` (GeoJSON in a JSONB column) so a single
+table serves points (bridges/culverts/structures), lines (roads) and polygons (buildings) without
+per-type geometry columns. Nearby searches use a local meter-based projection in Python/Shapely.
 
 ## Lifecycle state machine
 
@@ -118,11 +117,9 @@ and the weights used, so any score can be reconstructed and audited later.
 - **Audit log is separate from application logs** (`audit_logs` table, written via
   `app/utils/audit.py` inside the same transaction as the business change) — required for
   government accountability, not derivable from server logs.
-- **CSV import never overwrites** — duplicate `asset_code`s are always skipped, surfaced in the
-  preview, never silently merged.
 
 ## Deployment
 
 Out of scope for the hackathon build, but the app is deliberately cloud-neutral: FastAPI +
-PostgreSQL/PostGIS run anywhere (a VM, a container platform, a managed Postgres service). No
+PostgreSQL run anywhere (a VM, a container platform, a managed Postgres service). No
 AWS-specific SDKs are used; `app/utils/storage.py` is the only integration point for adding S3 later.

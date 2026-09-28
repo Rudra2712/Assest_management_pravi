@@ -1,0 +1,8 @@
+venv/
+uploads/
+tests/
+migrations/versions/__pycache__/
+__pycache__/
+*.pyc
+.pytest_cache/
+seed/

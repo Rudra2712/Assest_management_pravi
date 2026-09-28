@@ -1,11 +1,8 @@
-"""GeoJSON <-> PostGIS conversion helpers. Keeps Shapely/GeoAlchemy2 details
-out of routers and services, which only ever see plain GeoJSON dicts."""
+"""GeoJSON validation and geometry-kind helpers."""
 
 from typing import Any
 
-from geoalchemy2.shape import from_shape, to_shape
-from shapely.geometry import mapping, shape
-from shapely.geometry.base import BaseGeometry
+from shapely.geometry import shape
 
 from app.models.enums import GeometryKind
 
@@ -24,13 +21,10 @@ def geojson_to_geometry_kind(geojson: dict[str, Any]) -> GeometryKind:
     return GEOJSON_TYPE_TO_KIND[geom_type]
 
 
-def geojson_to_wkb(geojson: dict[str, Any], srid: int = 4326):
-    geom: BaseGeometry = shape(geojson)
-    return from_shape(geom, srid=srid)
+def geojson_to_geometry(geojson: dict[str, Any]) -> dict[str, Any]:
+    shape(geojson)
+    return geojson
 
 
-def wkb_to_geojson(wkb_element) -> dict[str, Any] | None:
-    if wkb_element is None:
-        return None
-    geom = to_shape(wkb_element)
-    return mapping(geom)
+def geometry_to_geojson(geometry: dict[str, Any] | None) -> dict[str, Any] | None:
+    return geometry

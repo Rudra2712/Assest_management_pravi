@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user
 from app.auth.security import create_access_token, create_refresh_token, decode_token, verify_password
 from app.database import get_db
+from app.models.contractor import Contractor
 from app.models.user import User
 from app.permissions.jurisdiction import jurisdiction_unit_ids, user_role_codes
 from app.schemas.auth import CurrentUserRead, LoginRequest, RefreshRequest, TokenResponse
@@ -47,7 +48,9 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=CurrentUserRead)
-def read_me(user: User = Depends(get_current_user)):
+def read_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     data = CurrentUserRead.model_validate(user)
     data.roles = list(user_role_codes(user))
+    contractor = db.query(Contractor).filter(Contractor.user_id == user.id).first()
+    data.contractor_id = contractor.id if contractor else None
     return data

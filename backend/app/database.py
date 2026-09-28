@@ -4,10 +4,20 @@ from datetime import datetime
 from sqlalchemy import DateTime, create_engine, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.pool import NullPool
 
-from app.config import settings
+from app.config import IS_SERVERLESS, settings
 
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, future=True)
+# On Vercel each invocation is a short-lived process — a traditional
+# in-process pool just leaks connections across cold starts. NullPool opens
+# one connection per request and closes it after; pair DATABASE_URL with
+# Neon's pooled (pgbouncer) endpoint in production so this stays cheap.
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    future=True,
+    poolclass=NullPool if IS_SERVERLESS else None,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 
 

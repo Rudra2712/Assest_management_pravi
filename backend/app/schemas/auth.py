@@ -34,3 +34,4 @@ class CurrentUserRead(ORMModel):
     department_id: UUID | None = None
     administrative_unit_id: UUID | None = None
     roles: list[str] = []
+    contractor_id: UUID | None = None

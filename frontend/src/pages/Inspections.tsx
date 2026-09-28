@@ -8,7 +8,7 @@ import { ConditionBadge } from "../components/Badge";
 import { useAuth } from "../hooks/useAuth";
 
 export default function Inspections() {
-  const { hasRole, user } = useAuth();
+  const { hasRole } = useAuth();
   const queryClient = useQueryClient();
   const [mineOnly, setMineOnly] = useState(hasRole("FIELD_ENGINEER"));
   const [showAssign, setShowAssign] = useState(false);
@@ -34,7 +34,7 @@ export default function Inspections() {
     },
   });
 
-  const canAssign = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
+  const canAssign = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
 
   return (
     <div className="space-y-4">

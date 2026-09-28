@@ -34,7 +34,7 @@ export default function AssetList() {
       }),
   });
 
-  const canCreate = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN", "CIRCLE_DIVISION_OFFICER", "SUB_DIVISION_OFFICER");
+  const canCreate = hasRole("STATE_ADMIN", "DEPARTMENT_ADMIN");
 
   return (
     <div className="space-y-4">

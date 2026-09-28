@@ -47,8 +47,8 @@ placeholder, not a secret.
 
 Every material state change (asset create/update, lifecycle transitions, inspection submit/review,
 maintenance decisions, work order status changes, document upload/versioning, user/role changes,
-CSV imports) writes an immutable row to `audit_logs` (`app/utils/audit.py`), in the same database
-transaction as the change itself — so an audit entry can never be missing because a background
+grievance and tender actions) write immutable rows to `audit_logs` (`app/utils/audit.py`) in the same
+database transaction as the change itself — so an audit entry can never be missing because a background
 job failed to run.
 
 ## Rate limiting

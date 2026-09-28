@@ -10,7 +10,6 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
-import geoalchemy2
 
 from app.models.enums import (
     AdminUnitLevel,
@@ -42,8 +41,6 @@ def _enum(pyenum, name):
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-
     ts_cols = lambda: [
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -217,11 +214,9 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("asset_id", UUID(as_uuid=True), sa.ForeignKey("assets.id", ondelete="CASCADE"), unique=True, nullable=False),
         sa.Column("geometry_kind", _enum(GeometryKind, "geometry_kind_geom"), nullable=False),
-        sa.Column("geom", geoalchemy2.Geometry(geometry_type="GEOMETRY", srid=4326), nullable=False),
+        sa.Column("geom", JSONB, nullable=False),
         *ts_cols(),
     )
-    # GeoAlchemy2 auto-creates a GIST spatial index for this column (spatial_index=True
-    # is the type's default) — no explicit op.create_index needed here.
 
     op.create_table(
         "asset_relationships",
@@ -339,7 +334,7 @@ def upgrade() -> None:
         sa.Column("inspector_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("assigned_date", sa.Date, nullable=True),
         sa.Column("inspection_date", sa.Date, nullable=True),
-        sa.Column("gps_point", geoalchemy2.Geometry(geometry_type="POINT", srid=4326), nullable=True),
+        sa.Column("gps_point", JSONB, nullable=True),
         sa.Column("checklist_responses", JSONB, nullable=True),
         sa.Column("overall_condition", _enum(ConditionRating, "condition_rating"), nullable=True),
         sa.Column("remarks", sa.Text, nullable=True),

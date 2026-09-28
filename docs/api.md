@@ -23,8 +23,7 @@ running. Auth: `Authorization: Bearer <access_token>` (JWT, short-lived; refresh
 | `/approvals` | List approval records (inspection/maintenance/lifecycle/project) |
 | `/notifications` | List mine, mark read |
 | `/reports` | `/dashboard` (state/GIS-level aggregates), `/field-dashboard` (per-inspector) |
-| `/imports` | `/assets/preview`, `/assets/commit` — synchronous CSV import |
-| `/audit-logs` | Filterable audit trail (admin/auditor only) |
+| `/audit-logs` | Filterable audit trail (state/department admin only) |
 
 ## Conventions
 
