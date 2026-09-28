@@ -1,150 +1,155 @@
-# R&B Immovable Physical Asset Inventory & Lifecycle Management System
+# R&B Asset Inventory
 
-A centralized, GIS-enabled system for the Roads & Buildings (R&B) Department to inventory, inspect,
-maintain and manage **non-movable physical infrastructure assets** — roads, bridges, culverts,
-government buildings and other fixed structures — across their complete lifecycle.
+A GIS-enabled asset inventory and lifecycle management application for Roads & Buildings (R&B) teams. It brings fixed infrastructure records, field inspections, maintenance work, project tracking, and procurement workflows into one role-aware workspace.
 
-This is a hackathon MVP: a single FastAPI backend, a single React frontend, and PostgreSQL.
-No Docker, no Nginx, no Redis/Celery, no MinIO — everything runs with two commands on a normal
-developer machine.
+This repository contains a React + TypeScript web app, a FastAPI REST API, and a PostgreSQL database. It is designed to run locally without Docker, PostGIS, Redis, or a separate object-storage service.
 
-## Architecture
+## Contents
 
+- [What it does](#what-it-does)
+- [Technology](#technology)
+- [Run locally](#run-locally)
+- [Demo accounts](#demo-accounts)
+- [Tests and quality checks](#tests-and-quality-checks)
+- [Repository map](#repository-map)
+- [Documentation](#documentation)
+- [Deployment and limitations](#deployment-and-limitations)
+
+## What it does
+
+- Maintain a searchable inventory of roads, bridges, culverts, buildings, and other fixed assets.
+- View and filter asset locations on a GIS map using GeoJSON geometry and MapLibre.
+- Track lifecycle transitions, inspections, condition assessments, and maintenance history.
+- Route maintenance requests through approvals, work orders, contractor assignment, and verification.
+- Manage projects, contractors, tenders, grievances, and supporting documents.
+- Provide dashboards, notifications, and an auditable record of important changes.
+- Enforce role-based permissions and administrative-jurisdiction scoping in the API.
+
+The project is an MVP. Government SSO, email/SMS delivery, and production-grade document storage are not implemented. See [docs/security.md](docs/security.md) and [docs/architecture.md](docs/architecture.md) for scope and security notes.
+
+## Technology
+
+| Area | Technologies |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query |
+| Maps and charts | MapLibre GL, Turf.js, Recharts |
+| Backend | Python 3.11+, FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Database | PostgreSQL 14+; PostGIS is not required |
+| Documents | Local filesystem storage under `backend/uploads/` |
+
+## Run locally
+
+### Prerequisites
+
+- Windows with PowerShell (commands below), or adapt the activation/copy commands for your shell
+- Node.js 18+ and npm
+- Python 3.11+
+- PostgreSQL 14+
+
+### 1. Create local databases
+
+From the repository root, run the SQL setup script as a PostgreSQL superuser. If `psql` is not on your `PATH`, use its full path, for example:
+
+```powershell
+psql -U postgres -f scripts\setup_local_db.sql
 ```
-Browser
-   |
-   v
-React + Vite + Tailwind (GIS map, dashboards)
-   |  REST (fetch/axios)
-   v
-FastAPI (single modular app: auth, assets, GIS, lifecycle, inspections,
-         maintenance, projects, documents, audit)
-   |
-   +--> PostgreSQL             (relational data + GeoJSON geometry)
-   +--> backend/uploads/       (local document storage; S3-ready abstraction)
+
+This creates the `rb_admin` role, the `rb_assets` development database, and the separate `rb_assets_test` database used by the test suite. The local role password is `rb_dev_password`.
+
+### 2. Configure the frontend and backend
+
+The checked-in example contains local defaults. Copy it into each app directory so Vite and the backend each load their own environment file:
+
+```powershell
+Copy-Item .env.example frontend\.env.local
+Copy-Item .env.example backend\.env
 ```
 
-See [docs/architecture.md](docs/architecture.md) for details, [docs/database.md](docs/database.md) for
-the schema/ERD, and [docs/api.md](docs/api.md) for the API surface.
+The example database URL matches the SQL setup script. If your PostgreSQL username, password, host, or database differs, update `DATABASE_URL` in `backend\.env`. Before exposing the app beyond local development, replace `SECRET_KEY` with a strong secret and restrict `BACKEND_CORS_ORIGINS` to the frontend's exact origin.
 
-## Prerequisites
+### 3. Install, migrate, and seed the backend
 
-1. **Node.js** 18+ and npm
-2. **Python** 3.11+
-3. **PostgreSQL** 14+ (no PostGIS extension required)
+In a PowerShell terminal:
 
-## Setup (Windows)
-
-### 1. Create the database
-
-As the `postgres` superuser (adjust the path to your PostgreSQL `bin` directory):
-
-```bash
-"C:\Program Files\PostgreSQL\<version>\bin\psql.exe" -U postgres -f scripts\setup_local_db.sql
-```
-
-This creates the `rb_admin` role and the `rb_assets` database.
-
-### 2. Configure environment
-
-```bash
-copy .env.example .env
-```
-
-The defaults in `.env.example` match `scripts\setup_local_db.sql` (`rb_admin` / `rb_dev_password` /
-`rb_assets` on `localhost:5432`) — edit `DATABASE_URL` if your local setup differs.
-
-### 3. Backend
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+```powershell
+Set-Location backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 alembic upgrade head
 python -m seed.seed_data
 uvicorn app.main:app --reload
 ```
 
-Backend runs at `http://localhost:8000` (interactive API docs at `http://localhost:8000/docs`).
+The API is available at [http://localhost:8000](http://localhost:8000), its health check at [http://localhost:8000/health](http://localhost:8000/health), and interactive API documentation at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-### 4. Frontend
+### 4. Start the frontend
 
-In a second terminal:
+In a second terminal from the repository root:
 
-```bash
-cd frontend
+```powershell
+Set-Location frontend
 npm install
 npm run dev
 ```
 
-Frontend runs at `http://localhost:5173` and talks directly to the backend at `http://localhost:8000`.
+Open [http://localhost:5173](http://localhost:5173). The default API URL is `http://localhost:8000/api/v1`; change `VITE_API_BASE_URL` in `frontend\.env.local` if your backend runs elsewhere.
 
-### 5. Log in
+### 5. Sign in
 
-Use any of the seeded demo accounts (password `Password123!` for all):
+All seeded accounts use the password `Password123!`:
 
 | Email | Role |
 |---|---|
-| state.admin@rnb.gov.in | State Administrator |
-| dept.admin@rnb.gov.in | R&B Department Administrator |
-| field.engineer@rnb.gov.in | Field Engineer / Inspector |
-| maintenance.officer@rnb.gov.in | Maintenance Officer |
-| contractor.user@rnb.gov.in | Contractor |
+| `state.admin@rnb.gov.in` | State administrator |
+| `dept.admin@rnb.gov.in` | Department administrator |
+| `field.engineer@rnb.gov.in` | Field engineer / inspector |
+| `maintenance.officer@rnb.gov.in` | Maintenance officer |
+| `contractor.user@rnb.gov.in` | Contractor |
 
-All seed data (assets, users, inspections, work orders, projects) is **synthetic demo data** and
-does not represent real government records.
+Seed records are fictional demo data, not government records. **Running the seed command again refreshes generated business data** (including assets, inspections, projects, grievances, and tenders); do not run it against a database containing data you need to keep.
 
-## Deploying to Vercel
+## Tests and quality checks
 
-See [docs/deployment.md](docs/deployment.md) — two Vercel projects (frontend + backend) plus a
-free Neon Postgres database, with the real tradeoffs of running this on serverless (document
-uploads need external storage in production) spelled out up front.
+Backend tests (run from `backend/` with the virtual environment activated):
 
-## Running tests
-
-```bash
-cd backend
-venv\Scripts\activate
+```powershell
 pytest
 ```
 
-Some tests require the local PostgreSQL database configured above; the lifecycle and
-condition-scoring services also have pure unit tests that run without a database.
+The test suite uses `rb_assets_test`, not the demo database. The SQL setup script creates this database. If it is unavailable, database-backed tests are skipped; set `TEST_DATABASE_URL` to use a different test database.
 
-## Project layout
+Frontend checks (run from `frontend/`):
 
-```
-/
-  backend/
-    app/            FastAPI app: routers, models, schemas, services, auth, permissions, gis, utils
-    migrations/      Alembic migrations
-    seed/            Demo data seed script
-    tests/           Pytest suite
-    uploads/         Local document storage (gitignored contents)
-  frontend/
-    src/
-      pages/         Route-level screens
-      components/    Shared UI components
-      layouts/       App shell / navigation
-      api/           Typed API client functions (axios)
-      hooks/         Auth context, etc.
-      types/         Shared TypeScript types
-      routes/        Route guards
-  docs/              Architecture, database, API, setup, security docs
-  scripts/           One-off setup scripts (local DB bootstrap)
+```powershell
+npm run lint
+npm run build
 ```
 
-## What's implemented (MVP scope)
+## Repository map
 
-Authentication + RBAC + jurisdiction scoping, administrative hierarchy, asset registry with
-type-specific detail (roads/bridges/culverts/buildings/structures), GeoJSON-backed GIS map with
-filtering, an auditable lifecycle state machine, the full inspection workflow (assign → GPS →
-checklist → findings → photos → submit → supervisor review), deterministic/explainable condition
-& risk scoring, maintenance requests → approval → work orders → contractor assignment →
-completion → verification, projects linked to assets, contractors, document upload/versioning on
-local disk, dashboards (state + GIS + field), audit logs, and CSV asset import with duplicate
-detection.
+```text
+backend/
+  app/          FastAPI routes, schemas, models, services, auth, and permissions
+  migrations/   Alembic database migrations
+  seed/         Synthetic demo-data loader
+  tests/        Backend test suite
+  uploads/      Local document files (generated; not committed)
+frontend/
+  src/          React screens, components, API client, hooks, and routes
+docs/           Setup, architecture, API, database, deployment, and security guides
+scripts/        Local PostgreSQL setup script
+```
 
-Notifications, email/SMS and government SSO are stubbed/future-scope per the original spec —
-see `docs/architecture.md` for what's deliberately out of scope for this MVP.
+## Documentation
+
+- [Setup and troubleshooting](docs/setup.md)
+- [Architecture](docs/architecture.md)
+- [Database schema](docs/database.md)
+- [API endpoints](docs/api.md)
+- [Security notes](docs/security.md)
+- [Vercel deployment](docs/deployment.md)
+
+## Deployment and limitations
+
+See [docs/deployment.md](docs/deployment.md) for the Vercel frontend/backend and Neon PostgreSQL setup. Vercel's function filesystem is temporary, so uploaded documents do not persist there; production deployment needs external object storage. The local filesystem storage is intended for development and demos.
